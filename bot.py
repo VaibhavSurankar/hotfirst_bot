@@ -99,47 +99,40 @@ def is_valid_product(title: str) -> bool:
 
 # =========================
 # CORE CHECK
+# (page ek hi baar leta hai, har baar naya launch nahi karta — fast)
 # =========================
-def check():
+def check(page):
     seen = load_seen()
     first_run = len(seen) == 0
     new_items = []
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"]
-        )
-        page = browser.new_page()
-        page.goto(URL, timeout=60000)
-        page.wait_for_timeout(8000)
+    page.goto(URL, timeout=60000)
+    page.wait_for_timeout(4000)  # 8000 se ghatakar 4000 (page load ke liye still zaroori)
 
-        # scroll to load more products
-        for _ in range(10):
-            page.mouse.wheel(0, 4000)
-            page.wait_for_timeout(1500)
+    # scroll to load more products (wait time kam kiya gaya)
+    for _ in range(10):
+        page.mouse.wheel(0, 4000)
+        page.wait_for_timeout(500)  # 1500 se ghatakar 500
 
-        links = page.query_selector_all("a[href]")
-        print("Total links found:", len(links))
+    links = page.query_selector_all("a[href]")
+    print("Total links found:", len(links))
 
-        for a in links:
-            title = a.get_attribute("title")
-            href = a.get_attribute("href")
+    for a in links:
+        title = a.get_attribute("title")
+        href = a.get_attribute("href")
 
-            if not title or not href:
-                continue
-            if not is_valid_product(title):
-                continue
+        if not title or not href:
+            continue
+        if not is_valid_product(title):
+            continue
 
-            if href.startswith("/"):
-                href = "https://www.firstcry.com" + href
+        if href.startswith("/"):
+            href = "https://www.firstcry.com" + href
 
-            if href not in seen:
-                seen[href] = True
-                if not first_run:
-                    new_items.append(f"{title}\n{href}")
-
-        browser.close()
+        if href not in seen:
+            seen[href] = True
+            if not first_run:
+                new_items.append(f"{title}\n{href}")
 
     save_seen(seen)
 
@@ -155,11 +148,26 @@ def check():
 # =========================
 # LOOP
 # =========================
+CHECK_INTERVAL_SECONDS = 15  # safe minimum — isse kam mat karna (FirstCry block kar sakta hai)
+
 if __name__ == "__main__":
     send_telegram("🤖 Hot Wheels FirstCry bot STARTED and monitoring")
-    while True:
-        try:
-            check()
-        except Exception as e:
-            print("ERROR:", e)
-        time.sleep(120)  # every 2 minutes
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage"]
+        )
+        page = browser.new_page()
+
+        while True:
+            try:
+                check(page)
+            except Exception as e:
+                print("ERROR:", e)
+                # agar page/browser crash ho gaya ho to naya page bana lo
+                try:
+                    page = browser.new_page()
+                except Exception:
+                    pass
+            time.sleep(CHECK_INTERVAL_SECONDS)
